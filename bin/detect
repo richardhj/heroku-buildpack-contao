@@ -1,0 +1,8 @@
+#!/bin/sh
+
+# Check if this buildpack should run
+if [ -d $1/core-bundle ]; then
+  exit 0
+else
+  exit 1
+fi

@@ -1,0 +1,5 @@
+# Run command after each build
+release: php vendor/bin/contao-console contao:migrate --with-deletes --no-interaction
+
+# Set the document root to web/
+web: heroku-php-apache2 web/

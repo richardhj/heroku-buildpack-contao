@@ -1,0 +1,5 @@
+contao:
+  localconfig:
+    licenseAccepted: true
+    disableCron: true
+    installPassword: '%env(INSTALL_PASSWORD)%'

@@ -1,0 +1,65 @@
+#!/bin/sh
+
+indent() {
+  sed -u 's/^/       /'
+}
+
+echo "-----> Installing Contao managed edition"
+
+BUILD_DIR=$1
+BIN_DIR=$(cd $(dirname $0); pwd)
+ROOT_DIR=$(dirname $BIN_DIR)
+CACHE_DIR=$2/php
+mkdir -p "$CACHE_DIR"
+
+# Move monorepo into subfolder named "repo". The composer.json loads this folder as repository.
+cd $BUILD_DIR
+mkdir repo && ls | grep -v repo | xargs mv -t repo
+
+# Create the project by copying the skeleton files
+rsync -a -v $ROOT_DIR/skeleton/ $BUILD_DIR
+
+# Install a mini-PHP (for Composer) and Composer
+STACK=${STACK:-heroku-18} # Anvil has none
+s3_url="https://lang-php.s3.amazonaws.com/dist-${STACK}-stable/"
+CACHE_DIR=$2/php
+mkdir -p "$CACHE_DIR"
+
+echo "-----> Creating composer.lock file"
+
+# PHP expects to be installed in /app/.heroku/php because of compiled paths, let's set that up!
+# Adapted from the original heroku/php buildpack
+mkdir -p /app/.heroku
+# all system packages live in there
+mkdir -p $BUILD_DIR/.heroku/php
+# set up Composer
+export COMPOSER_HOME=$CACHE_DIR/.composer
+mkdir -p $COMPOSER_HOME
+
+# Install PHP
+mkdir -p $BUILD_DIR/.heroku/php-min
+ln -s $BUILD_DIR/.heroku/php-min /app/.heroku/php-min
+
+curl --fail --silent --location -o $BUILD_DIR/.heroku/php-min.tar.gz "${s3_url}php-min-7.4.15.tar.gz"
+tar xzf $BUILD_DIR/.heroku/php-min.tar.gz -C $BUILD_DIR/.heroku/php-min
+rm $BUILD_DIR/.heroku/php-min.tar.gz
+
+# Install Composer
+EXPECTED_CHECKSUM="$(/app/.heroku/php-min/bin/php -r 'copy("https://composer.github.io/installer.sig", "php://stdout");')"
+/app/.heroku/php-min/bin/php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+ACTUAL_CHECKSUM="$(/app/.heroku/php-min/bin/php -r "echo hash_file('sha384', 'composer-setup.php');")"
+
+if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]
+then
+    >&2 echo 'ERROR: Invalid installer checksum' | indent
+    rm composer-setup.php
+    exit 1
+fi
+
+/app/.heroku/php-min/bin/php composer-setup.php --quiet
+rm composer-setup.php
+
+# Create the composer.lock file
+/app/.heroku/php-min/bin/php composer.phar update --no-dev --prefer-dist --no-plugins --no-install --no-scripts --no-interaction --no-progress --ignore-platform-reqs
+
+# Done! The heroku/php buildpack MUST follow and will build the Symfony application.
